@@ -16,10 +16,30 @@ const   morgan = require('morgan')
 const dotenv = require("dotenv")
 const Group = require('./model/Group')
 const Message = require('./model/Message')
+const User = require('./model/User')
+const multer =require('multer')
+
+
+
+const Storage2 = multer.diskStorage (
+  {destination: "../client/public/messages/",
+  filename :(req,file,cb)=>{
+      cb(null,Date.now() + file.originalname)
+  }
+}
+)
+
+const Upload2 = multer({
+  storage:Storage2
+})
+
+
 
 dotenv.config()
 
 connectDb()
+
+
 
 
 const app=express()
@@ -30,13 +50,15 @@ app.use(morgan('tiny'))
 const server= http.createServer(app)
 
 
+
+
 app.use('/register',register)
 app.use('/login',login)
 
 
 app.use(verifyJWT)
 app.use('/groups',groups)
-app.use('/messages',messages)
+app.use('/messages',Upload2.single('imageMessage'),messages)
 app.use('/users',users)
 
 
@@ -51,88 +73,185 @@ global.onlineUsers = new Map();
 io.on('connection', async(socket) =>{
     console.log("we have new connection")
     const groups = await Group.find()
+    let loggedUserId
     const groupRooms= groups.map(group => group.groupName)
     global.chatSocket = socket;
-    socket.on("login", (userId) => {
-      
-      
+    socket.on("login", async(user) => {
+      loggedUserId= user.id
+      socket.broadcast.emit("user-loggedIn", {user})
+      console.log('login event received '+user.id)
       socket.join(groupRooms)
-      onlineUsers.set(userId, socket.id);
+      onlineUsers.set(user.id, socket.id);
 
     });
 
+    const handleMessageEvent =async(event,data) => {
 
-  
-    socket.on("send-msg", async(data,callback) => {
-      console.log('send msg event');
+
+      // console.log(`${event} received`);
+      
      if(data.isPrivate){
       // console.log(data.isPrivate,dato.to)
       const sendUserSocket = onlineUsers.get(data.to);
       if (sendUserSocket) {
-        console.log("receive event emited to user")
-        socket.to(sendUserSocket).emit("msg-receive", data);
-        const tdata = await Message.create({
-          message: { text: data.message },
-          users: [data.from, data.to],
-          sender: !data.isPrivate?data.sender:undefined,
-          isPrivate:data.isPrivate
-         
-        });
         
-
+        socket.to(sendUserSocket).emit(event, data);
+        if(event=='send-msg'){
+          const tdata = await Message.create({
+            message: data.message ,
+            users: [data.from, data.to],
+            sender: !data.isPrivate?data.sender:undefined,
+            isPrivate:data.isPrivate
+           
+          });
+         }
+        
+  
       }else{
         console.log('user not found')
-        const tdata = await Message.create({
-          message: { text: data.message },
-          users: [data.from, data.to],
-          sender: !data.isPrivate?data.sender:undefined,
-          isPrivate:data.isPrivate
-         
-        });
+        if(event=='send-msg'){
+          const tdata = await Message.create({
+            message: data.message ,
+            users: [data.from, data.to],
+            sender: !data.isPrivate?data.sender:undefined,
+            isPrivate:data.isPrivate
+           
+          });
+         }
+       
        
       }
      }else{
       console.log("receive event emited to group")
-
+        console.log(event, data.to)
         const group = groups.find(group=>group._id==data.to)
         const room=group.groupName
-        socket.to(room).emit("msg-receive", data)
+        socket.to(room).emit(event, data)
+        
+       if(event=='send-msg'){
         const tdata = await Message.create({
-          message: { text: data.message },
+          message: data.message ,
           users: [data.from, data.to],
           sender: !data.isPrivate?data.sender:undefined,
           isPrivate:data.isPrivate
          
         });
+       }
         
      }
+  
+     
+    }
 
-     callback(null)
+
+  
+    socket.on("send-msg", (data)=>{
+      handleMessageEvent('send-msg',data)
     });
 
-
-    socket.on('join', ({name,room},callback)=>{
-
-        // const {error,user} =addNewUser({id:socket.id,name,room})
-
-        if(error) return callback(error)
-        socket.emit('message', {user:'admin', text:`welcome ${user.name} to room ${user.room}`})
-        socket.broadcast.to(user.room).emit('message', {user: 'admin', text: `${user.name} has joined!`})
-        socket.join(user.room)
-        callback()
+    socket.on ("file-meta",(data)=>{
+      handleMessageEvent('file-meta',data)
+    }) 
 
 
-    })
+  socket.on ("fs-start",(data)=>{
+    handleMessageEvent("fs-start",data)
+  }) 
 
-    socket.on('sendMessage', (message,callback) => {
-        const user = getUser(socket.id)
-        io.to(user.room).emit('message', {user: user.name,text:message})
-        callback()
-    })
+
+  socket.on ("file-raw",(data)=>{
+    handleMessageEvent('file-raw',data)
+  })
+
+
+  
+
+
+
+
+   
+
+
+
+   
+
+
+    //video calls
+    
+  socket.on('start-call',({from,to})=>{
+    const receiver= onlineUsers.get(to._id);
+    console.log('start call received')
+    
+    socket.to(receiver).emit('receive-call',{from,to})
+
+  })
+  socket.on('accept-request',({from,to})=>{
+    const receiver= onlineUsers.get(to);
+    console.log('accept-request received' ,to)
+    
+    socket.to(receiver).emit('accept-request',{from,to})
+
+  })
+  socket.on('reject-request',({from,to})=>{
+    
+    const receiver= onlineUsers.get(to);
+    console.log('reject-request received')
+    console.log('from',from)
+    console.log('to',to)
+    
+    socket.to(receiver).emit('reject-request',{from,to})
+
+  })
+	
+  
+
+  socket.on('send-offer', ({offer,from,to}) => {
+    console.log('send offer is received')
+    const receiver= onlineUsers.get(to._id);
+    
+    
+    socket.to(receiver).emit('receive-offer',{offer,from,to})
+  })
+  socket.on('send-candidate', ({candidate,from,to}) => {
+    const receiver= onlineUsers.get(to._id);
+    console.log('candidate received')
+
+    // console.log(candidate)
+    socket.to(receiver).emit('receive-candidate',{candidate,from,to})
+  })
+
+  socket.on('send-answer', ({answer,from, to})=>{
+    const receiver = onlineUsers.get(to)
+    console.log('send answer is received',to)
+    socket.to(receiver).emit('receive-answer',({answer,from, to}))
+  })
+  socket.on('toggle-cam', ({from, to})=>{
+    const receiver = onlineUsers.get(to)
+    console.log('toggle-cam is received',to)
+    socket.to(receiver).emit('toggle-cam',({from, to}))
+  })
+  socket.on('end-call', ({from, to})=>{
+    const receiver = onlineUsers.get(to)
+    console.log('end-call is received',to)
+    socket.to(receiver).emit('end-call',({from, to}))
+  })
+
+
+  module.exports={Upload2}
+
+
+	
+
+
+
 
     socket.on("disconnect", () =>{
         console.log("User had left")
+      socket.broadcast.emit('logout',loggedUserId)
     })
+
+
+
 })
 
 
