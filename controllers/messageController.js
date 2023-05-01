@@ -20,7 +20,8 @@ const getMessages = async (req, res, next) => {
         users:msg.users,
         messageType:msg.messageType,
         isPrivate:msg.isPrivate,
-        sender:msg.sender
+        sender:msg.sender,
+        createdAt:msg.createdAt
       };
     });
     res.json(projectedMessage);
@@ -31,7 +32,7 @@ const getMessages = async (req, res, next) => {
 
 const addMessage = async (req, res, next) => {
   try {
-    const { from, to,message,messageType,sender } = req.body;
+    const { from, to,message,messageType,sender,isPrivate } = req.body;
     console.log("from add message ",req.body)
     if (req.file!==undefined)
     {
@@ -43,7 +44,7 @@ const addMessage = async (req, res, next) => {
     const data = await Message.create({
       message,
       users: [from, to],
-      sender: !isPrivate?sender:undefined,
+      sender: sender,
       isPrivate:isPrivate,
       messageType
      
