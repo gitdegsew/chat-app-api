@@ -130,7 +130,8 @@ io.on('connection', async(socket) =>{
       console.log("receive event emited to group")
         console.log(event, data.to)
         const group = groups.find(group=>group._id==data.to)
-        const room=group.groupName
+        
+        const room=group? group.groupName:groupRooms[groupRooms.length-1]
         socket.to(room).emit(event, data)
         
        if(event=='send-msg'){
@@ -147,6 +148,13 @@ io.on('connection', async(socket) =>{
   
      
     }
+
+
+    socket.on('groupCreated',(groupName)=>{
+      socket.join(groupName)
+      groupRooms.push(groupName)
+      
+    })
 
 
   
@@ -183,11 +191,12 @@ io.on('connection', async(socket) =>{
 
     //video calls
     
-  socket.on('start-call',({from,to})=>{
-    const receiver= onlineUsers.get(to._id);
-    console.log('start call received')
+  socket.on('start-call',({from,to,isVideo})=>{
+    const id=to._id?to._id:to.id
+    const receiver= onlineUsers.get(id);
+    console.log('start call received to ',isVideo)
     
-    socket.to(receiver).emit('receive-call',{from,to})
+    socket.to(receiver).emit('receive-call',{from,to,isVideo})
 
   })
 
@@ -235,8 +244,9 @@ io.on('connection', async(socket) =>{
   
 
   socket.on('send-offer', ({offer,from,to}) => {
-    console.log('send offer is received')
-    const receiver= onlineUsers.get(to._id);
+    const id=to._id?to._id:to.id
+    console.log('send offer is received to ',to)
+    const receiver= onlineUsers.get(id);
     
     
     socket.to(receiver).emit('receive-offer',{offer,from,to})
@@ -266,7 +276,13 @@ io.on('connection', async(socket) =>{
   })
 
 
-  module.exports={Upload2}
+  
+
+  socket.on('logout',(userId)=>{
+    console.log('logout user id ',userId)
+    onlineUsers.delete(userId)
+    socket.broadcast.emit('user-loggedout',Array.from(onlineUsers.keys()))
+  })
 
 
 	
