@@ -22,11 +22,21 @@ const getUsers = async (req,res) => {
 }
 const getUser = async (req,res) => {
     const {id} = req.params
-    const user = await User.findOne({_id:id})
+    const user = await User.findOne({_id:id}).populate('groups')
 
     return res.status(200).json(user)
 
 }
+const updateUnseen = async (req,res) => {
+    const {id} = req.params
+    const  {unseen} = req.body
+    console.log("from update unseen ",req.body)
+    const user = await User.findOneAndUpdate({_id:id},{unseen:unseen})
+   
 
-module.exports ={getUsers,getUser}
+    return res.status(201).json(user)
+
+}
+
+module.exports ={getUsers,getUser,updateUnseen}
 

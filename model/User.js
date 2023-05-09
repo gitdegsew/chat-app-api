@@ -10,17 +10,23 @@ const userSchema = new mongoose.Schema(
             type:String,
             required:true,
         },
-        groups:{
-            type:Array,
-            default:[]
-        },
+        groups:[{
+            type:mongoose.Schema.Types.ObjectId,
+            ref:'Group',
+           
+        }],
+        // groups:{
+        //     type:Array,
+            
+        //     default:[]
+        // },
         isOnline:{
             type:Boolean,
             default:false
         },
         unseen:{
-            type:Number,
-            default:0
+            type:Array,
+            default:[]
         },
         
         isAvatarImageSet: {
@@ -31,6 +37,7 @@ const userSchema = new mongoose.Schema(
             type: String,
             default: "",
           },
+          
         
 
 

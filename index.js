@@ -8,7 +8,7 @@ const messages = require('./routes/messages')
 const users = require('./routes/users')
 const cors=require('cors')
 // const { addUser, removeUser, getUser, getUsersInRoom }=require('./users')
-const {addNewUser} = require('./controllers/registerController')
+// const {addNewUser} = require('./controllers/registerController')
 const mongoose = require('mongoose')
 const connectDb = require('./db/config')
 const verifyJWT= require('./middleware/verifyJwt')
@@ -68,24 +68,40 @@ const io= socketIo(server,{cors: {
 }})
 
 global.onlineUsers = new Map();
+global.storedGroups= new Map()
 
+Group.find().then(groups =>{
+  groups.forEach(group =>{
+    storedGroups.set(group._id.toString(),group.groupName)
+  })
+})
 
 io.on('connection', async(socket) =>{
     console.log("we have new connection")
-    const groups = await Group.find()
+    // console.log(storedGroups)
+    let groups =[]
     let loggedUserId
-    const groupRooms= groups.map(group => group.groupName)
+    let groupRooms=[]
     global.chatSocket = socket;
+
     socket.on("login", async(user) => {
       loggedUserId= user.id
       onlineUsers.set(user.id, socket.id);
+      User.findById(user.id).populate('groups').then((myUser)=>{
+          groups=myUser.groups
+          
+          groupRooms= groups.map(group => group.groupName)
+          socket.join(groupRooms)
+         
+      })
+      
       io.emit('onlineUsers',Array.from(onlineUsers.keys()))
       // for (let v of onlineUsers.keys()) { 
       //   console.log("vegetable ",v)
       // }
       socket.broadcast.emit("user-loggedIn", user.id)
       console.log('login event received ',Array.from(onlineUsers.keys()))
-      socket.join(groupRooms)
+      
       
 
     });
@@ -119,19 +135,27 @@ io.on('connection', async(socket) =>{
             message: data.message ,
             users: [data.from, data.to],
             sender: !data.isPrivate?data.sender:undefined,
-            isPrivate:data.isPrivate
+            isPrivate:data.isPrivate,
+            messageType:data.messageType,
+            
+            
            
           });
+          const user = await User.findOne({_id:data.to})
+          user.unseen=[...user.unseen,{check:data.from,isPrivate:true}]
+          await user.save()
+
          }
        
        
       }
      }else{
-      console.log("receive event emited to group")
-        console.log(event, data.to)
-        const group = groups.find(group=>group._id==data.to)
+      // console.log("receive event emited to group")
+        // console.log(event, data.to)
+        // const group = groups.find(group=>group._id==data.to)
         
-        const room=group? group.groupName:groupRooms[groupRooms.length-1]
+        const room=storedGroups.get(data.to)
+        // console.log("sent room ",room)
         socket.to(room).emit(event, data)
         
        if(event=='send-msg'){
@@ -139,9 +163,30 @@ io.on('connection', async(socket) =>{
           message: data.message ,
           users: [data.from, data.to],
           sender: !data.isPrivate?data.sender:undefined,
-          isPrivate:data.isPrivate
+          isPrivate:data.isPrivate,
+          messageType:data.messageType,
+          
+          
          
         });
+        
+
+        try {
+           const gF =await Group.findById(data.to).populate('members')
+           const uI=gF.members.map(user =>user._id)
+           const utu= await User.updateMany({_id:{$in:uI}},{ $push: { unseen: {check:data.to,isPrivate:false} } })
+
+          //  await groupF.save()
+          // const rusers=await  User.updateMany({$where:function() { return (this.groups.includes(new ObjectId(this.comp))) }},{ $push: { unseen: {check:id,isPrivate:false} } })
+          // console.log('selected users')
+          // console.log(utu)
+        } catch (error) {
+          console.log('error updating group unseen')
+          console.log(error)
+          
+        }
+       
+       
        }
         
      }
@@ -150,10 +195,106 @@ io.on('connection', async(socket) =>{
     }
 
 
-    socket.on('groupCreated',(groupName)=>{
-      socket.join(groupName)
-      groupRooms.push(groupName)
+    socket.on('groupCreated',(data)=>{
+      console.log('groupcreated event received')
+      socket.join(data.groupName)
+      storedGroups.set(data.groupId,data.groupName)
+      // groupRooms.push(groupName)
       
+      // console.log(storedGroups)
+
+      const messageToSend = {
+        message: `${data.username} has created the group`,
+        from: data.userId,
+  
+        to: data.groupId,
+        messageType: "notification",
+        isPrivate:  false,
+        sender: "ADMIN",
+        createdAt: new Date(),
+      };
+
+      // socket.to(data.groupName).emit('send-msg',messageToSend)
+      // socket.to(socket.id).emit('send-msg',messageToSend)
+       Message.create({
+        message: messageToSend.message ,
+        users: [messageToSend.from, messageToSend.to],
+        sender: !messageToSend.isPrivate?messageToSend.sender:undefined,
+        isPrivate:messageToSend.isPrivate,
+        messageType:messageToSend.messageType,
+        
+        
+       
+      });
+
+
+      
+    })
+
+    socket.on('join-group', async(data) =>{
+      socket.join(data.groupName)
+      // socket.to(data.groupName).emit('join-group', data)
+      console.log('join-group event received')
+      const messageToSend = {
+        message: `${data.username} has joind the group`,
+        from: data.userId,
+  
+        to: data.groupId,
+        messageType: "notification",
+        isPrivate:  false,
+        sender: "ADMIN",
+        createdAt: new Date(),
+      };
+
+      socket.to(data.groupName).emit('send-msg',messageToSend)
+      // socket.to(socket.id).emit('send-msg',messageToSend)
+      const tdata = await Message.create({
+        message: messageToSend.message ,
+        users: [messageToSend.from, messageToSend.to],
+        sender: !messageToSend.isPrivate?messageToSend.sender:undefined,
+        isPrivate:messageToSend.isPrivate,
+        messageType:messageToSend.messageType,
+        
+        
+       
+      });
+
+      
+      
+    })
+
+    socket.on('leave-group', async(data) =>{
+        // socket.to(data.groupName).emit('leave-group', data)
+        
+
+        const messageToSend = {
+          message: `${data.username} has left the group`,
+          from: data.userId,
+    
+          to: data.groupId,
+          messageType: "text",
+          isPrivate:  false,
+          sender: "ADMIN",
+          createdAt: new Date(),
+        };
+
+        socket.to(data.groupName).emit('send-msg',messageToSend)
+        const tdata = await Message.create({
+          message: messageToSend.message ,
+          users: [messageToSend.from, messageToSend.to],
+          sender: !messageToSend.isPrivate?messageToSend.sender:undefined,
+          isPrivate:messageToSend.isPrivate,
+          messageType:messageToSend.messageType,
+          
+          
+         
+        });
+
+        
+        socket.leave(data.groupName)
+
+        
+
     })
 
 
@@ -175,8 +316,14 @@ io.on('connection', async(socket) =>{
   socket.on ("file-raw",(data)=>{
     handleMessageEvent('file-raw',data)
   })
+  socket.on ("istyping",(data)=>{
+    handleMessageEvent('istyping',data)
+  })
+  socket.on ("finished",(data)=>{
+    handleMessageEvent('finished',data)
+  })
 
-
+ 
   
 
 
@@ -281,7 +428,8 @@ io.on('connection', async(socket) =>{
   socket.on('logout',(userId)=>{
     console.log('logout user id ',userId)
     onlineUsers.delete(userId)
-    socket.broadcast.emit('user-loggedout',Array.from(onlineUsers.keys()))
+    socket.disconnect()
+    // socket.broadcast.emit('user-loggedout',Array.from(onlineUsers.keys()))
   })
 
 
@@ -294,8 +442,8 @@ io.on('connection', async(socket) =>{
       
         console.log("User had left ",loggedUserId)
         onlineUsers.delete(loggedUserId)
-      socket.broadcast.emit('user-loggedout',Array.from(onlineUsers.keys()))
-      socket.broadcast.emit('logout',loggedUserId)
+      io.emit('user-loggedout',Array.from(onlineUsers.keys()))
+      // io.emit('logout',loggedUserId)
     })
 
 

@@ -10,11 +10,13 @@ const groupSchema = new mongoose.Schema(
             type:String,
             required:true,
         },
-        members:{
-            type:Array,
-            default:[]
-        },
+        members:[{
+            type:mongoose.Schema.Types.ObjectId,
+            ref:"User",
+           
+        }],
         chats:{type:Array, default:[]},
+        
 
 
     }

@@ -9,7 +9,7 @@ const addNewUser = async (req, res,next) => {
     
     const { username,password } = req.body;
     console.log(username,password)
-    if (!username && !password) return res.status(400).json({ 'message': 'Username and password are required.' });
+    if (!username || !password || username==="ADMIN") return res.status(400).json({ 'message': 'Username and password are required.' });
 
     // check for duplicate usernames in the db
     const duplicate = await User.findOne({ username: username }).exec();
@@ -20,10 +20,18 @@ const addNewUser = async (req, res,next) => {
         const hashedPwd = await bcrypt.hash(password, 10);
 
         // create and store the new user
-        const result = await User.create({
-            "username": username,
-            "password": hashedPwd
-        });
+        let result 
+        try {
+             result = await User.create({
+                "username": username,
+                "password": hashedPwd,
+                
+            });
+        } catch (error) {
+            console.log("error creating user")
+            console.log(error)
+            
+        }
 
         const accessToken = jwt.sign(
             {
@@ -49,7 +57,7 @@ const addNewUser = async (req, res,next) => {
 
         
     } catch (err) {
-        res.status(500).json({ 'message': err.message });
+        res.status(500).json({ 'u kidding': err.message });
     }
 }
 

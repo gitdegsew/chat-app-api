@@ -1,5 +1,6 @@
 const Message = require("../model/Message");
 const User = require("../model/User");
+const Group = require("../model/Group");
 
 
 const getMessages = async (req, res, next) => {
@@ -50,7 +51,17 @@ const addMessage = async (req, res, next) => {
      
     });
 
-    if (data) return res.json({ msg: "Message added successfully." });
+    if(isPrivate){
+      const user = await User.findOne({_id:to})
+      user.unseen=[...user.unseen,{check:from,isPrivate:true}]
+      await user.save()
+    }else{
+            const gF =await Group.findById(to).populate('members')
+           const uI=gF.members.map(user =>user._id)
+           const utu= await User.updateMany({_id:{$in:uI}},{ $push: { unseen: {check:to,isPrivate:false} } })
+    }
+
+    if (data) return res.status(201).status(201).json({ msg: "Message added successfully." });
     else return res.json({ msg: "Failed to add message to the database" });
   } catch (ex) {
     next(ex);
@@ -64,8 +75,9 @@ const addImage = async (req, res, next) => {
 
   
   let {message,from,to,messageType,isPrivate,sender} = req.body
-  console.log('adding image')
-  console.log(req.body)
+  // console.log('adding image')
+  // console.log(typeof isPrivate)
+  // console.log(req.body)
   try {
      
     // console.log("from add message ",req.body)
@@ -76,7 +88,7 @@ const addImage = async (req, res, next) => {
     
     if (!from && !to && !isPrivate) return res.status(400).json({ 'message': 'Invalid data' });
     // const user=await User.findOne({_id:from})
-    console.log('from addImage:')
+    // console.log('from addImage:')
     // console.log(user)
     const data = await Message.create({
       message,
@@ -86,9 +98,21 @@ const addImage = async (req, res, next) => {
       messageType
      
     });
+    if(isPrivate==="true"){
+      const user = await User.findOne({_id:to})
+      user.unseen=[...user.unseen,{check:from,isPrivate:true}]
+      await user.save()
+    }else if(isPrivate==="false"){
+      //  console.log('from addImage not private updateMany:')
+      const gF =await Group.findById(to).populate('members')
+      const uI=gF.members.map(user =>user._id)
+      const utu= await User.updateMany({_id:{$in:uI}},{ $push: { unseen: {check:to,isPrivate:false} } })
+      // updateMany({},{ $push: { unseen: {check:to,isPrivate:false} } })
+      // const users =await  User.find()
+    }
 
-    if (data) return res.json({ msg: "Message added successfully." });
-    else return res.json({ msg: "Failed to add message to the database" });
+    if (data) return res.status(201).json({ msg: "Message added successfully." });
+    else return res.status(201).json({ msg: "Failed to add message to the database" });
   } catch (ex) {
     next(ex);
   }
