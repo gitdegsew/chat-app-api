@@ -1,6 +1,6 @@
 const mongoose = require('mongoose')
 
-const  MONURL = "mongodb://127.0.0.1:27017/chatdb"
+const  MONURL = "mongodb+srv://degsew:1234@cluster0.pzg4zhe.mongodb.net/chat?retryWrites=true&w=majority"
 
 const connectDb=async()=>{
     try {
